@@ -133,12 +133,12 @@ class Soundd:
   def get_audible_alert(self, sm):
     if sm.updated['controlsState']:
       new_alert = sm['controlsState'].alertSound.raw
-      self.update_alert(new_alert)
+      #self.update_alert(new_alert)
     elif check_controls_timeout_alert(sm):
-      self.update_alert(AudibleAlert.warningImmediate)
+      #self.update_alert(AudibleAlert.warningImmediate)
       self.controls_timeout_alert = True
     elif self.controls_timeout_alert:
-      self.update_alert(AudibleAlert.none)
+      #self.update_alert(AudibleAlert.none)
       self.controls_timeout_alert = False
 
   def calculate_volume(self, weighted_db):
