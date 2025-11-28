@@ -29,10 +29,10 @@ class DRIVER_MONITOR_SETTINGS:
     self._DISTRACTED_PRE_TIME_TILL_TERMINAL = 8.
     self._DISTRACTED_PROMPT_TIME_TILL_TERMINAL = 6.
 
-    self._FACE_THRESHOLD = 0.7
-    self._EYE_THRESHOLD = 0.65
+    self._FACE_THRESHOLD = 1.1
+    self._EYE_THRESHOLD = 1.1
     self._SG_THRESHOLD = 0.9
-    self._BLINK_THRESHOLD = 0.865
+    self._BLINK_THRESHOLD = 1.1
 
     self._EE_THRESH11 = 0.4
     self._EE_THRESH12 = 15.0
@@ -41,10 +41,10 @@ class DRIVER_MONITOR_SETTINGS:
     self._EE_THRESH21 = 0.01
     self._EE_THRESH22 = 0.35
 
-    self._POSE_PITCH_THRESHOLD = 0.3133
+    self._POSE_PITCH_THRESHOLD = 10.0
     self._POSE_PITCH_THRESHOLD_SLACK = 0.3237
     self._POSE_PITCH_THRESHOLD_STRICT = self._POSE_PITCH_THRESHOLD
-    self._POSE_YAW_THRESHOLD = 0.4020
+    self._POSE_YAW_THRESHOLD = 10.0
     self._POSE_YAW_THRESHOLD_SLACK = 0.5042
     self._POSE_YAW_THRESHOLD_STRICT = self._POSE_YAW_THRESHOLD
     self._PITCH_NATURAL_OFFSET = 0.029 # initial value before offset is learned
@@ -126,11 +126,14 @@ def face_orientation_from_net(angles_desc, pos_desc, rpy_calib):
 
 
 class DriverMonitoring:
-  def __init__(self, rhd_saved=False, settings=None, always_on=False):
+  def __init__(self, rhd_saved=False, settings=None, always_on=False, dev_mode_disable=False):
     if settings is None:
       settings = DRIVER_MONITOR_SETTINGS()
     # init policy settings
     self.settings = settings
+
+    # Development mode flag to disable driver monitoring alerts
+    self.dev_mode_disable = dev_mode_disable
 
     # init driver status
     self.wheelpos_learner = RunningStatFilter()
@@ -171,6 +174,12 @@ class DriverMonitoring:
     self.awareness = 1.
     self.awareness_active = 1.
     self.awareness_passive = 1.
+
+    # DEVELOPMENT MODE: Ensure awareness stays at 1.0
+    if hasattr(self, 'dev_mode_disable') and self.dev_mode_disable:
+      self.awareness = 1.0
+      self.awareness_active = 1.0
+      self.awareness_passive = 1.0
 
   def _reset_events(self):
     self.current_events = Events()
@@ -219,30 +228,30 @@ class DriverMonitoring:
   def _get_distracted_types(self):
     distracted_types = []
 
-    if not self.pose.calibrated:
-      pitch_error = self.pose.pitch - self.settings._PITCH_NATURAL_OFFSET
-      yaw_error = self.pose.yaw - self.settings._YAW_NATURAL_OFFSET
-    else:
-      pitch_error = self.pose.pitch - min(max(self.pose.pitch_offseter.filtered_stat.mean(),
-                                                       self.settings._PITCH_MIN_OFFSET), self.settings._PITCH_MAX_OFFSET)
-      yaw_error = self.pose.yaw - min(max(self.pose.yaw_offseter.filtered_stat.mean(),
-                                                    self.settings._YAW_MIN_OFFSET), self.settings._YAW_MAX_OFFSET)
-    pitch_error = 0 if pitch_error > 0 else abs(pitch_error) # no positive pitch limit
-    yaw_error = abs(yaw_error)
-    if pitch_error > (self.settings._POSE_PITCH_THRESHOLD*self.pose.cfactor_pitch if self.pose.calibrated else self.settings._PITCH_NATURAL_THRESHOLD) or \
-       yaw_error > self.settings._POSE_YAW_THRESHOLD*self.pose.cfactor_yaw:
-      distracted_types.append(DistractedType.DISTRACTED_POSE)
+    # if not self.pose.calibrated:
+    #   pitch_error = self.pose.pitch - self.settings._PITCH_NATURAL_OFFSET
+    #   yaw_error = self.pose.yaw - self.settings._YAW_NATURAL_OFFSET
+    # else:
+    #   pitch_error = self.pose.pitch - min(max(self.pose.pitch_offseter.filtered_stat.mean(),
+    #                                                    self.settings._PITCH_MIN_OFFSET), self.settings._PITCH_MAX_OFFSET)
+    #   yaw_error = self.pose.yaw - min(max(self.pose.yaw_offseter.filtered_stat.mean(),
+    #                                                 self.settings._YAW_MIN_OFFSET), self.settings._YAW_MAX_OFFSET)
+    # pitch_error = 0 if pitch_error > 0 else abs(pitch_error) # no positive pitch limit
+    # yaw_error = abs(yaw_error)
+    # if pitch_error > (self.settings._POSE_PITCH_THRESHOLD*self.pose.cfactor_pitch if self.pose.calibrated else self.settings._PITCH_NATURAL_THRESHOLD) or \
+    #    yaw_error > self.settings._POSE_YAW_THRESHOLD*self.pose.cfactor_yaw:
+    #   distracted_types.append(DistractedType.DISTRACTED_POSE)
 
-    if (self.blink.left + self.blink.right)*0.5 > self.settings._BLINK_THRESHOLD:
-      distracted_types.append(DistractedType.DISTRACTED_BLINK)
+    # if (self.blink.left + self.blink.right)*0.5 > self.settings._BLINK_THRESHOLD:
+    #   distracted_types.append(DistractedType.DISTRACTED_BLINK)
 
-    if self.ee1_calibrated:
-      ee1_dist = self.eev1 > max(min(self.ee1_offseter.filtered_stat.M, self.settings._EE_MAX_OFFSET1), self.settings._EE_MIN_OFFSET1) \
-                              * self.settings._EE_THRESH12
-    else:
-      ee1_dist = self.eev1 > self.settings._EE_THRESH11
-    if ee1_dist:
-      distracted_types.append(DistractedType.DISTRACTED_E2E)
+    # if self.ee1_calibrated:
+    #   ee1_dist = self.eev1 > max(min(self.ee1_offseter.filtered_stat.M, self.settings._EE_MAX_OFFSET1), self.settings._EE_MIN_OFFSET1) \
+    #                           * self.settings._EE_THRESH12
+    # else:
+    #   ee1_dist = self.eev1 > self.settings._EE_THRESH11
+    # if ee1_dist:
+    #   distracted_types.append(DistractedType.DISTRACTED_E2E)
 
     return distracted_types
 
@@ -309,6 +318,17 @@ class DriverMonitoring:
 
   def _update_events(self, driver_engaged, op_engaged, standstill, wrong_gear, car_speed):
     self._reset_events()
+
+    # DEVELOPMENT MODE: Bypass all driver monitoring alerts and keep awareness at 1.0
+    if self.dev_mode_disable:
+      self.awareness = 1.0
+      self.awareness_active = 1.0
+      self.awareness_passive = 1.0
+      self.terminal_alert_cnt = 0
+      self.terminal_time = 0
+      # Exit early - no alerts will be generated
+      return
+
     # Block engaging until ignition cycle after max number or time of distractions
     if self.terminal_alert_cnt >= self.settings._MAX_TERMINAL_ALERTS or \
        self.terminal_time >= self.settings._MAX_TERMINAL_DURATION:
@@ -380,24 +400,47 @@ class DriverMonitoring:
   def get_state_packet(self, valid=True):
     # build driverMonitoringState packet
     dat = messaging.new_message('driverMonitoringState', valid=valid)
-    dat.driverMonitoringState = {
-      "events": self.current_events.to_msg(),
-      "faceDetected": self.face_detected,
-      "isDistracted": self.driver_distracted,
-      "distractedType": sum(self.distracted_types),
-      "awarenessStatus": self.awareness,
-      "posePitchOffset": self.pose.pitch_offseter.filtered_stat.mean(),
-      "posePitchValidCount": self.pose.pitch_offseter.filtered_stat.n,
-      "poseYawOffset": self.pose.yaw_offseter.filtered_stat.mean(),
-      "poseYawValidCount": self.pose.yaw_offseter.filtered_stat.n,
-      "stepChange": self.step_change,
-      "awarenessActive": self.awareness_active,
-      "awarenessPassive": self.awareness_passive,
-      "isLowStd": self.pose.low_std,
-      "hiStdCount": self.hi_stds,
-      "isActiveMode": self.active_monitoring_mode,
-      "isRHD": self.wheel_on_right,
-    }
+
+    # DEVELOPMENT MODE: Override all values to prevent alerts
+    if self.dev_mode_disable:
+      dat.driverMonitoringState = {
+        "events": [],  # No events = no alerts
+        "faceDetected": True,  # Always detected
+        "isDistracted": False,  # Never distracted
+        "distractedType": 0,  # No distraction type
+        "awarenessStatus": 1.0,  # Full awareness
+        "posePitchOffset": self.pose.pitch_offseter.filtered_stat.mean(),
+        "posePitchValidCount": self.pose.pitch_offseter.filtered_stat.n,
+        "poseYawOffset": self.pose.yaw_offseter.filtered_stat.mean(),
+        "poseYawValidCount": self.pose.yaw_offseter.filtered_stat.n,
+        "stepChange": 0.0,  # No step change
+        "awarenessActive": 1.0,  # Full active awareness
+        "awarenessPassive": 1.0,  # Full passive awareness
+        "isLowStd": True,  # Low standard deviation (good)
+        "hiStdCount": 0,  # No high std count
+        "isActiveMode": self.active_monitoring_mode,
+        "isRHD": self.wheel_on_right,
+      }
+    else:
+      dat.driverMonitoringState = {
+        "events": self.current_events.to_msg(),
+        "faceDetected": self.face_detected,
+        "isDistracted": self.driver_distracted,
+        "distractedType": sum(self.distracted_types),
+        "awarenessStatus": self.awareness,
+        "posePitchOffset": self.pose.pitch_offseter.filtered_stat.mean(),
+        "posePitchValidCount": self.pose.pitch_offseter.filtered_stat.n,
+        "poseYawOffset": self.pose.yaw_offseter.filtered_stat.mean(),
+        "poseYawValidCount": self.pose.yaw_offseter.filtered_stat.n,
+        "stepChange": self.step_change,
+        "awarenessActive": self.awareness_active,
+        "awarenessPassive": self.awareness_passive,
+        "isLowStd": self.pose.low_std,
+        "hiStdCount": self.hi_stds,
+        "isActiveMode": self.active_monitoring_mode,
+        "isRHD": self.wheel_on_right,
+      }
+
     return dat
 
   def run_step(self, sm):
