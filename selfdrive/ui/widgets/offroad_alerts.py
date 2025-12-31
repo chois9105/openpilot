@@ -198,6 +198,11 @@ class OffroadAlert(AbstractAlert):
       alert_data.text = text
       alert_data.visible = bool(text)
 
+      if alert_data.key == "Offroad_ConnectivityNeeded" and alert_data.visible:
+        if not self.params.get_bool("SnoozeUpdate"):
+          self.params.put_bool("SnoozeUpdate", True)
+        alert_data.visible = False
+
       if alert_data.visible:
         active_count += 1
 
